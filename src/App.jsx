@@ -85,8 +85,11 @@ function App() {
     // Set hasEvaluated = true untuk trigger "baru expression" logic jika toggle aktif
     if (charValue === "=") {
       let evalExpr = expr;
+      // Hapus titik atau operator di akhir sebelum eval
       if (endsWithDot) {
-        evalExpr = expr.slice(0, -1); // Hapus titik di akhir sebelum eval
+        evalExpr = expr.slice(0, -1); // Hapus titik di akhir
+      } else if (endsWithOperator) {
+        evalExpr = expr.slice(0, -1); // Hapus operator di akhir
       }
       const result = evaluateExpression(evalExpr, operations);
       setResult(result);
