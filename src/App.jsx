@@ -5,10 +5,10 @@ import {
   replaceValueToDisplay,
 } from "./calculatorUtils";
 
+const PAYMENT_ENDPOINT = "http://127.0.0.1:3001";
+
 function App() {
-  // State untuk menyimpan expression: display (user-friendly) dan value (internal untuk kalkulasi)
   const [expression, setExpression] = useState({ display: "0", value: "0" });
-  // State untuk menyimpan hasil dari evaluasi expression
   const [result, setResult] = useState("0");
   // Flag untuk menandai bahwa user telah menekan "="
   // Digunakan untuk menentukan perilaku input berikutnya
@@ -19,6 +19,8 @@ function App() {
   // Toggle dengan memanggil window.toggleContinueAfterEval() di konsol
   const [continueAfterEval, setContinueAfterEval] = useState(true);
 
+  const [paymentSuccess, isPaymentSuccess] = useState(false);
+
   // Expose toggle function untuk testing/development
   // Memungkinkan user mengubah perilaku tanpa UI button
   useEffect(() => {
@@ -28,7 +30,6 @@ function App() {
     };
   }, []);
 
-  // Konfigurasi tombol kalkulator: 4 kolom, display vs value
   const keys = [
     [
       { display: "7", value: "7" },
@@ -63,40 +64,65 @@ function App() {
   // Daftar operator matematis dari keys
   const operations = keys[3].map((el) => el.value);
 
-  const appendExpression = (charValue) => {
-    // Destruktur expression dan hitung state yang diperlukan
-    const expr = expression.value;
-    const lastChar = expr.at(-1);
-    const currentNumber = getCurrentNumber(expr, operations);
-    const endsWithOperator = operations.includes(lastChar);
-    const endsWithDot = lastChar === ".";
-    const currentNumberHasDot = currentNumber.includes(".");
-    const currentNumberIsZero = currentNumber === "0";
+  // Destruktur expression dan hitung state yang diperlukan
+  const expr = expression.value;
+  const lastChar = expr.at(-1);
+  const currentNumber = getCurrentNumber(expr, operations);
+  const endsWithOperator = operations.includes(lastChar);
+  const endsWithDot = lastChar === ".";
+  const currentNumberHasDot = currentNumber.includes(".");
+  const currentNumberIsZero = currentNumber === "0";
 
-    // Helper: update expression dengan display yang sudah di-format
-    const setExpr = (newValue) => {
-      setExpression({
-        display: String(replaceValueToDisplay(newValue)),
-        value: String(newValue),
+  // Helper: update expression dengan display yang sudah di-format
+  const setExpr = (newValue) => {
+    setExpression({
+      display: String(replaceValueToDisplay(newValue)),
+      value: String(newValue),
+    });
+  };
+
+  const handlePayment = (e) => {
+    e.preventDefault();
+    document.getElementById("my_modal_1").close();
+    fetch(`${PAYMENT_ENDPOINT}/api/pay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+      .then((data) => data.json())
+      .then((data) => {
+        window.snap.pay(data.token, {
+          onSuccess: () => {
+            const result = evaluateExpression(expr, operations);
+            setResult(result);
+            setHasEvaluated(true);
+            if (result !== undefined) {
+              setExpr(expr);
+            }
+            document.getElementById("my_modal_2").showModal();
+          },
+        });
       });
-    };
+  };
 
+  const appendExpression = (charValue) => {
     // Jika user klik "=", evaluasi expression dan simpan hasil
     // Set hasEvaluated = true untuk trigger "baru expression" logic jika toggle aktif
     if (charValue === "=") {
       let evalExpr = expr;
+
+      // Abaikan jika hanya ada angka nol di awal
+      if (expr === "0") return;
       // Hapus titik atau operator di akhir sebelum eval
       if (endsWithDot) {
         evalExpr = expr.slice(0, -1); // Hapus titik di akhir
       } else if (endsWithOperator) {
         evalExpr = expr.slice(0, -1); // Hapus operator di akhir
       }
-      const result = evaluateExpression(evalExpr, operations);
-      setResult(result);
-      setHasEvaluated(true);
-      if (result !== undefined) {
-        setExpr(evalExpr);
-      }
+
+      setExpr(evalExpr);
+      document.getElementById("my_modal_1").showModal();
       return;
     }
 
@@ -108,16 +134,19 @@ function App() {
         // Mulai expression baru dengan input ini
         if (numbersNotZero.includes(charValue)) {
           setExpr(charValue);
+          setResult(0);
           setHasEvaluated(false);
           return;
         }
         if (charValue === "0") {
           setExpr("0");
+          setResult(0);
           setHasEvaluated(false);
           return;
         }
         if (charValue === ".") {
           setExpr("0.");
+          setResult(0);
           setHasEvaluated(false);
           return;
         }
@@ -225,20 +254,16 @@ function App() {
       <div className="bg-[#b9dfe4] min-h-2/3 sm:w-2/3 w-full rounded-2xl shadow-xl">
         <h1 className="font-bold m-4 text-2xl">Kalkulator MBG</h1>
 
-        {/* Display area: menampilkan expression dan hasil */}
         <div className="h-24 max-w-full bg-white rounded-xl mx-4 ">
-          {/* Baris atas: expression.display (user-friendly format) */}
           <p className="text-gray-500 m-2 mt-3 pt-2 text-end text-md">
             {expression.display}
           </p>
-          {/* Baris bawah: result dan tombol AC (All Clear) */}
           <span className="flex m-2 -mt-1 justify-end text-5xl font-semibold">
             <p>{result}</p>
             <span className="mx-2"></span>
             <button
               className="text-base font-extralight border border-gray-400 rounded-2xl mt-2 px-2"
               onClick={() => {
-                // Reset expression dan result ke state awal
                 setExpression({ display: "0", value: "0" });
                 setResult("0");
               }}
@@ -249,7 +274,6 @@ function App() {
           </span>
         </div>
 
-        {/* Grid tombol: map setiap kolom dan baris */}
         <div className="flex max-w-full min-h-2/3 gap-2 my-2 mx-4">
           {keys.map((col, cId) => (
             <div
@@ -258,15 +282,12 @@ function App() {
             >
               {col.map((row, id) => (
                 <button
-                  // Styling: tombol "=" biru, sisanya abu-abu
                   className={`flex-1 font-semibold text-3xl ${row.value === "=" ? "bg-blue-600 text-gray-50 hover:bg-blue-700" : "bg-gray-200 hover:bg-gray-300"} rounded-md transition`}
                   key={`${cId} ${id}`}
                   onClick={() => {
-                    // Setiap tombol memanggil appendExpression dengan value-nya
                     appendExpression(row.value);
                   }}
                 >
-                  {/* Tampilkan display (user-friendly), bukan value internal */}
                   {row.display}
                 </button>
               ))}
@@ -274,6 +295,47 @@ function App() {
           ))}
         </div>
       </div>
+      <dialog id="my_modal_1" className="modal">
+        <div className="modal-box">
+          <h3 className="font-bold text-lg">You discovered a premium!</h3>
+          <p className="py-4">
+            You need to pay IDR 29.900 to continue your calculation.
+          </p>
+          <div className="modal-action">
+            <form method="dialog">
+              <button className="btn">Close</button>
+            </form>
+            <form action="">
+              <button
+                type="submit"
+                className="btn btn-info"
+                onClick={handlePayment}
+              >
+                Pay
+              </button>
+            </form>
+          </div>
+        </div>
+      </dialog>
+      <dialog id="my_modal_2" className="modal">
+        <div className="modal-box">
+          <h3 className="font-bold text-lg">Here is your answer!</h3>
+          <div className="h-24 max-w-full bg-white rounded-xl mx-4 ">
+            <p className="text-gray-500 m-2 mt-3 pt-2 text-end text-md">
+              {expression.display}
+            </p>
+            <span className="flex m-2 -mt-1 justify-end text-5xl font-semibold">
+              <p>{result}</p>
+            </span>
+          </div>
+          <div className="modal-action">
+            <form method="dialog">
+              {/* if there is a button in form, it will close the modal */}
+              <button className="btn">Close</button>
+            </form>
+          </div>
+        </div>
+      </dialog>
     </main>
   );
 }
